@@ -80,6 +80,130 @@ def manage_schedule_slot(schedule_id):
         db.session.commit()
         return jsonify({"message": "Слот расписания удалён", "id": schedule.id}), 200
 
+@app.route('/clients', methods=['GET', 'POST'])
+def manage_clients():
+    if request.method == 'POST':
+        data = request.json
+        new_client = Client(name=data['name'], phone=data['phone'], service_id=data['service_id'], schedule_id=data['schedule_id'])
+        db.session.add(new_client)
+        db.session.commit()
+        return jsonify({"message": "Клиент добавлен", "id": new_client.id}), 201
+    else:
+        clients = Client.query.all()
+        return jsonify([{"id": c.id, "name": c.name, "phone": c.phone, "service_id": c.service_id, "schedule_id": c.schedule_id} for c in clients]), 200
+
+@app.route('/clients/<int:client_id>', methods=['PUT', 'DELETE'])
+def manage_client(client_id):
+    client = Client.query.get_or_404(client_id)
+    if request.method == 'PUT':
+        data = request.json
+        client.name = data.get('name', client.name)
+        client.phone = data.get('phone', client.phone)
+        client.service_id = data.get('service_id', client.service_id)
+        client.schedule_id = data.get('schedule_id', client.schedule_id)
+        db.session.commit()
+        return jsonify({"message": "Данные клиента обновлены", "id": client.id}), 200
+    elif request.method == 'DELETE':
+        db.session.delete(client)
+        db.session.commit()
+        return jsonify({"message": "Клиент удалён", "id": client.id}), 200
+
+@app.route('/notifications', methods=['POST'])
+def send_notification():
+    data = request.json
+    client = Client.query.get_or_404(data['client_id'])
+    schedule = Schedule.query.get_or_404(client.schedule_id)
+    service = Service.query.get_or_404(schedule.service_id)
+
+    notification_message = f"Напоминание: {service.name} запланировано на {schedule.date.isoformat()}"
+    
+    # Здесь можно добавить логику отправки уведомления клиенту (например, через SMS или Telegram API)
+    # Пример: send_sms(client.phone, notification_message)
+
+    return jsonify({"message": "Уведомление отправлено", "client_id": client.id}), 200
+
+@app.route('/admin/setup', methods=['POST'])
+def setup_admin():
+    data = request.json
+    admin_id = data.get('telegram_id')
+    if not admin_id:
+        return jsonify({"message": "Необходимо указать telegram_id"}), 400
+
+    # Здесь можно добавить логику сохранения администратора в базе данных
+    # Пример: save_admin(admin_id)
+
+    return jsonify({"message": "Администратор назначен", "telegram_id": admin_id}), 200
+
+@app.route('/admin/generate-link', methods=['GET'])
+def generate_client_link():
+    # Здесь можно добавить логику генерации уникальной ссылки для клиентской части
+    client_link = "https://example.com/client"  # Пример ссылки
+    return jsonify({"message": "Ссылка сгенерирована", "client_link": client_link}), 200
+
+@app.route('/admin/history', methods=['GET'])
+def get_history():
+    date_filter = request.args.get('date')
+    client_filter = request.args.get('client_id')
+    service_filter = request.args.get('service_id')
+
+    query = Client.query
+    if date_filter:
+        query = query.join(Schedule).filter(Schedule.date == date_filter)
+    if client_filter:
+        query = query.filter(Client.id == client_filter)
+    if service_filter:
+        query = query.filter(Client.service_id == service_filter)
+
+    history = query.all()
+    return jsonify([{
+        "id": c.id,
+        "name": c.name,
+        "phone": c.phone,
+        "service_id": c.service_id,
+        "schedule_id": c.schedule_id,
+        "date": Schedule.query.get(c.schedule_id).date.isoformat()
+    } for c in history]), 200
+
+@app.route('/notify/master', methods=['POST'])
+def notify_master():
+    data = request.json
+    client_id = data.get('client_id')
+    action = data.get('action')  # "new", "update", "cancel"
+
+    if not client_id or not action:
+        return jsonify({"message": "Необходимо указать client_id и action"}), 400
+
+    client = Client.query.get_or_404(client_id)
+    schedule = Schedule.query.get_or_404(client.schedule_id)
+    service = Service.query.get_or_404(schedule.service_id)
+
+    notification_message = f"Уведомление для мастера: {action} запись на {service.name} для {client.name} ({client.phone}) на {schedule.date.isoformat()}"
+
+    # Здесь можно добавить логику отправки уведомления мастеру (например, через Telegram API)
+    # Пример: send_telegram_message(master_telegram_id, notification_message)
+
+    return jsonify({"message": "Уведомление отправлено мастеру", "client_id": client_id}), 200
+
+@app.route('/notify/settings', methods=['POST'])
+def set_notification_settings():
+    data = request.json
+    master_id = data.get('master_id')
+    notifications_enabled = data.get('notifications_enabled', True)
+    notification_frequency = data.get('notification_frequency', 'immediate')  # "immediate", "daily", "weekly"
+
+    if not master_id:
+        return jsonify({"message": "Необходимо указать master_id"}), 400
+
+    # Здесь можно добавить логику сохранения настроек уведомлений в базе данных
+    # Пример: save_notification_settings(master_id, notifications_enabled, notification_frequency)
+
+    return jsonify({
+        "message": "Настройки уведомлений обновлены",
+        "master_id": master_id,
+        "notifications_enabled": notifications_enabled,
+        "notification_frequency": notification_frequency
+    }), 200
+
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
